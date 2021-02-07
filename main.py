@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-A module to collect request data from a public GitHub repository to a database.
+A module to analyze insights of PRs in public GitHub repos.
 """
 
 __author__ = "Rostyslav Zatserkovnyi"
