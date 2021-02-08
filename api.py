@@ -21,19 +21,19 @@ def gh_init_api(token):
             logger.info(f"Remaining API requests per hour: {rem} of {quota}")
 
         # Once the quota is close enough to ending, wait until it cools down
-        if rem == 10:
-            # Reset the callback for the api.rate_limit.get() call only (otherwise it causes an endless loop)
+        if rem <= 10:
+            # Reset the callback for the rate_limit.get() call, preventing an endless loop
             api.limit_cb = None
 
             limits = api.rate_limit.get()
             reset = limits.resources.core.reset
 
-            logger.warn(f"Close to reaching a rate limit. Halting until ${utils.unix_2_utc(reset)}...")
+            logger.warn(f"Close to reaching a rate limit. Halting until {utils.unix_2_utc(reset)}...")
             while int(time.time()) <= reset:
                 time.sleep(1)
             logger.warn(f"Rate limit reset, resuming")
 
-            # Resume regular callback again
+            # Restore the callback to its regular state
             api.limit_cb = limit_callback
 
     api.limit_cb = limit_callback
@@ -41,9 +41,9 @@ def gh_init_api(token):
 
 def gh_list_pulls(api, owner, repository, ascending=False):
     direction = 'asc' if ascending else 'desc'
-    return paged(api.pulls.list, owner=owner, repo=repository, state='all', sort='updated', direction=direction, per_page=100)
+    return paged(api.pulls.list, owner=owner, repo=repository, state='all', sort='updated', direction=direction, per_page=50)
 
 def gh_get_files(api, owner, repository, pull_num):
-    return paged(api.pulls.list_files, owner=owner, repo=repository, pull_number=pull_num, per_page=100)
+    return paged(api.pulls.list_files, owner=owner, repo=repository, pull_number=pull_num, per_page=50)
 
 

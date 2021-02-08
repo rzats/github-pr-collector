@@ -12,6 +12,7 @@ class PullRequest(Base):
     number = Column(Integer)
     title = Column(String)
     user_id = Column(Integer)
+    state = Column(String)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
     closed_at = Column(DateTime)
@@ -23,6 +24,7 @@ class PullRequest(Base):
         self.number = pr.number
         self.title = pr.title
         self.user_id = pr.user.id
+        self.state = pr.state
         self.created_at = utils.utc_2_datetime(pr.created_at)
         self.updated_at = utils.utc_2_datetime(pr.updated_at)
         self.closed_at = utils.utc_2_datetime(pr.closed_at) if pr.closed_at is not None else None
@@ -31,7 +33,7 @@ class PullRequest(Base):
 class PullRequestFile(Base):
     __tablename__ = 'pull_request_files'
 
-    pr_id = Column(String, ForeignKey('pull_requests.id'), primary_key = True)
+    pr_id = Column(Integer, ForeignKey('pull_requests.id'), primary_key = True)
     filename = Column(String, primary_key = True)
     status = Column(String)
     additions = Column(Integer)

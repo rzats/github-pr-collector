@@ -13,6 +13,7 @@ import database
 from logzero import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.sql import func, desc, extract, and_
 
 def main(args):
     try:
@@ -43,7 +44,13 @@ def main(args):
         pulls_paginator = api.gh_list_pulls(gh_api, owner, repository)
 
         try:
+            i = 1
             for page in pulls_paginator:
+                i += 1
+
+                if i == 3:
+                    exit(0)
+
                 print(len(page))
                 logger.debug(f"GET list_pulls ${owner}/${repository}")
                 pulls = [pr for pr in page]
@@ -63,17 +70,42 @@ def main(args):
                     logger.info(len(db_files))
                     session.add_all(db_files)
 
-            session.commit()
+                session.commit()
         except:
             session.rollback()
         finally:
             session.close()
 
-        return 0
+        exit(0)
 
     else:
-        # ... analyze
-        return 0
+        if args.query == 'min_t_merge':
+            statement = session.query(func.min(func.trunc(
+                (extract('epoch', database.PullRequest.merged_at) -
+                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
+                .filter(database.PullRequest.merged_at != None)
+            result = session.execute(statement)
+            print(result.fetchall())
+        elif args.query == 'avg_t_merge':
+            statement = session.query(func.avg(func.trunc(
+                (extract('epoch', database.PullRequest.merged_at) -
+                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
+                .filter(database.PullRequest.merged_at != None)
+            result = session.execute(statement)
+            print(result.fetchall())
+        elif args.query == 'max_t_merge':
+            statement = session.query(func.max(func.trunc(
+                (extract('epoch', database.PullRequest.merged_at) -
+                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
+                .filter(database.PullRequest.merged_at != None)
+            result = session.execute(statement)
+            print(result.fetchall())
+        else: #top_3_files
+            statement = session.query(database.PullRequestFile.filename, func.count(database.PullRequestFile.filename).label('filecount'))\
+                .group_by(database.PullRequestFile.filename).order_by(desc('filecount')).limit(3)
+            result = session.execute(statement)
+            print(result.fetchall())
+        exit(0)
 
 
 if __name__ == "__main__":
