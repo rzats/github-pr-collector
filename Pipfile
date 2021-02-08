@@ -7,6 +7,7 @@ name = "pypi"
 logzero = "*"
 ghapi = "*"
 sqlalchemy = "*"
+psycopg2 = "*"
 
 [dev-packages]
 
