@@ -4,122 +4,147 @@ A module to analyze insights of PRs in public GitHub repos.
 """
 
 __author__ = "Rostyslav Zatserkovnyi"
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 import argparse
 import os
-import api
-import database
+import sys
+import time
+
 from logzero import logger
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.sql import func, desc, extract, and_
+
+from github_collector import api, queries, utils
+
+# Possible analytic query options.
+MIN_T_MERGE = "min_t_merge"
+AVG_T_MERGE = "avg_t_merge"
+MAX_T_MERGE = "max_t_merge"
+TOP_3_FILES = "top_3_files"
+
 
 def main(args):
-    try:
-        assert len(args.repo.split("/")) == 2
-    except AssertionError:
-        logger.error("repo must be in the form of owner/repository e.g. numpy/numpy")
-        exit(1)
-
-    token = os.getenv("GH_COLLECTOR_API_TOKEN")
-    if not token:
-        logger.error("could not get a token for GitHub API; specify it via env variable GH_COLLECTOR_API_TOKEN")
-        exit(1)
-
     connection_string = os.getenv("GH_COLLECTOR_CONN_STRING")
     if not connection_string:
-        logger.error("could not get PostgreSQL connection string; specify it via env variable GH_COLLECTOR_CONN_STRING")
+        logger.error(
+            "could not get PostgreSQL connection string; " +
+            "specify it via env variable GH_COLLECTOR_CONN_STRING")
         exit(1)
 
-    owner = args.repo.split("/")[0]
-    repository = args.repo.split("/")[1]
-
-    db = create_engine(connection_string)
-    database.Base.metadata.create_all(db)
-    session = sessionmaker(bind=db)()
-
     if args.which == 'collect':
-        gh_api = api.gh_init_api(token)
-        pulls_paginator = api.gh_list_pulls(gh_api, owner, repository)
-
         try:
-            i = 1
-            for page in pulls_paginator:
-                i += 1
+            assert len(args.repo.split("/")) == 2
+        except AssertionError:
+            logger.error(
+                "repo must be in the form of owner/repository e.g. numpy/numpy")
+            exit(1)
 
-                if i == 3:
-                    exit(0)
+        owner = args.repo.split("/")[0]
+        repository = args.repo.split("/")[1]
 
-                print(len(page))
-                logger.debug(f"GET list_pulls ${owner}/${repository}")
-                pulls = [pr for pr in page]
-                db_pulls = [database.PullRequest(owner, repository, pr) for pr in pulls]
-                logger.info([pull.id for pull in db_pulls])
+        token = os.getenv("GH_COLLECTOR_API_TOKEN")
+        if not token:
+            logger.error(
+                "could not get API token; " +
+                "specify it via env variable GH_COLLECTOR_API_TOKEN")
+            exit(1)
+        ghapi = api.init_api(token)
 
-                session.add_all(db_pulls)
-
-                for pull in pulls:
-                    logger.debug(f"GET list_files {owner}/{repository}/{pull.number}")
-                    files_paginator = api.gh_get_files(gh_api, owner, repository, pull.number)
-                    files = []
-                    for page in files_paginator:
-                        files.extend([file for file in page])
-                    db_files = [database.PullRequestFile(pull, file) for file in files]
-                    logger.info([file.filename for file in db_files])
-                    logger.info(len(db_files))
-                    session.add_all(db_files)
-
-                session.commit()
-        except:
-            session.rollback()
-        finally:
-            session.close()
-
-        exit(0)
-
+        session = queries.init_db_session(connection_string)
+        action_collect(session, ghapi, owner, repository)
     else:
-        if args.query == 'min_t_merge':
-            statement = session.query(func.min(func.trunc(
-                (extract('epoch', database.PullRequest.merged_at) -
-                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
-                .filter(database.PullRequest.merged_at != None)
-            result = session.execute(statement)
-            print(result.fetchall())
-        elif args.query == 'avg_t_merge':
-            statement = session.query(func.avg(func.trunc(
-                (extract('epoch', database.PullRequest.merged_at) -
-                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
-                .filter(database.PullRequest.merged_at != None)
-            result = session.execute(statement)
-            print(result.fetchall())
-        elif args.query == 'max_t_merge':
-            statement = session.query(func.max(func.trunc(
-                (extract('epoch', database.PullRequest.merged_at) -
-                extract('epoch', database.PullRequest.created_at)) / 60).label('datediff')))\
-                .filter(database.PullRequest.merged_at != None)
-            result = session.execute(statement)
-            print(result.fetchall())
-        else: #top_3_files
-            statement = session.query(database.PullRequestFile.filename, func.count(database.PullRequestFile.filename).label('filecount'))\
-                .group_by(database.PullRequestFile.filename).order_by(desc('filecount')).limit(3)
-            result = session.execute(statement)
-            print(result.fetchall())
-        exit(0)
+        session = queries.init_db_session(connection_string)
+        action_analyze(session)
+
+
+def action_collect(session, ghapi, owner, repository):
+    """
+    Collects pull requests from GitHub repository and adds them to database.
+
+    @param session: SQLAlchemy session
+    @param ghapi: GhApi instance
+    @param owner: The account owning the GitHub repository
+    @param repository: The name of the GitHub repository
+    """
+    list_pulls = api.list_pulls(ghapi, owner, repository, ascending=True)
+
+    try:
+        logger.info(f"Collecting from {owner}/{repository}...")
+        for count, page in enumerate(list_pulls):
+            # Add all pull requests to database
+            logger.debug(f"GET list_pulls {owner}/{repository} | page #{count+1}")
+            pulls = [pr for pr in page]
+            queries.add_pulls(session, pulls, owner, repository)
+
+            # Commit PRs before files, as files rely on pull request IDs
+            logger.info(f'Committing PRs for pull request page #{count+1}...')
+            session.commit()
+            logger.info('...committed successfully!')
+
+            # For each pull request, add files to database
+            for pull in pulls:
+                logger.debug(
+                    f"GET list_files {owner}/{repository}/{pull.number}")
+                list_files = api.list_pull_files(ghapi, owner,
+                                                 repository,
+                                                 pull.number)
+                files = []
+                for page in list_files:
+                    files.extend([file for file in page])
+                queries.add_files(session, pull, files)
+
+            # Commit files after all are collected
+            logger.info(f'Committing files for pull request page #{count+1}...')
+            session.commit()
+            logger.info('...committed successfully!')
+        logger.info(f"Finished successfully!")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        session.rollback()
+    finally:
+        session.close()
+
+    exit(0)
+
+
+def action_analyze(session):
+    if args.query == TOP_3_FILES:
+        query = queries.top_n_files(session, 3)
+        result = queries.execute_query(session, query)
+        logger.info(result)
+    else:
+        if args.query == MIN_T_MERGE:
+            query = queries.datediff_min(session)
+        elif args.query == AVG_T_MERGE:
+            query = queries.datediff_avg(session)
+        else: # max_t_merge
+            query = queries.datediff_max(session)
+        result = queries.execute_query(session, query)[0][0]
+        logger.info(f'{utils.seconds_2_human(result)}')
+    exit(0)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers()
 
-    collect = subparsers.add_parser('collect', help='Collect pull request data from a given repository.')
-    collect.add_argument("repo", help="The repository to use for queries and analytics\ne.g. numpy/numpy")
+    # Add subparser for GitHub API -> Postgres collection
+    collect = subparsers.add_parser('collect',
+                                    help='Collect PR data from GitHub API.')
+    collect.add_argument("repo",
+                         help="GitHUb repository to use, e.g. numpy/numpy")
     collect.set_defaults(which='collect')
 
-    analyze = subparsers.add_parser('analyze', help='Analyze the data collected from a given repository.')
-    analyze.add_argument("repo", help="The repository to use for queries and analytics\ne.g. numpy/numpy")
-    analyze.add_argument("query", choices=['min_t_merge', 'avg_t_merge', 'max_t_merge', 'top_3_files'],
-                         help = 'The type of analytic auery to be run on the database.')
+    # Add subparser for Postgres analytics
+    analyze = subparsers.add_parser('analyze',
+                                    help='Analyze collected PR data.')
+    analyze.add_argument("query",
+                         choices=[
+                             MIN_T_MERGE,
+                             AVG_T_MERGE,
+                             MAX_T_MERGE,
+                             TOP_3_FILES
+                         ],
+                         help='The type of query to be run on the database.')
     analyze.set_defaults(which='analyze')
 
     parser.add_argument(
