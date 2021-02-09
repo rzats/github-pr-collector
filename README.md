@@ -1,7 +1,9 @@
 # github-pr-collector
 A CLI tool to collect insights from public repositories, store them in a relational DB and analyze them.
 
-### Requirements (tested on macOS Mojave)
+### Requirements
+
+_Note: the utility has been tested on a Mac OS machine; instructions for installing pipenv and postgresql may be different for Win/Linux._
 
 - Python 3 & pip
 - pipenv (e.g. `brew install pipenv`)
@@ -10,40 +12,63 @@ A CLI tool to collect insights from public repositories, store them in a relatio
 ### Usage
 
 Set up a pipenv and install the necessary dependencies:
-- `pipenv --three`
-- `pipenv --install`
+```
+pipenv --three
+pipenv install
+```
 
 Set up a PostgreSQL database; either a local instance or e.g. RDS:
-- `brew services start postgresql`
-- `createdb`
+```
+brew services start postgresql
+createdb
+```
 
-Obtain an API token from https://github.com/settings/tokens, then temporarily export it as an environment variable. Do the same with a PostgreSQL connection string (a local default is shown here):
+_(Note: the tables `pull_requests` and `pull_request_files`) will be created in the provided DB.)_
 
-- `export GH_COLLECTOR_API_TOKEN = c9a43a55b23972585e45507f2993f1133a758cbc`
-- `export GH_COLLECTOR_CONN_STRING = postgresql://localhost:5432`
+Obtain an API token from https://github.com/settings/tokens with at least `repo` permissions, then export it as an environment variable. Do the same with a PostgreSQL connection string (a local default is shown here):
+
+```
+export GH_COLLECTOR_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export GH_COLLECTOR_CONN_STRING=postgresql://localhost:5432
+```
 
 Finally, run the Python script as follows:
 
-- `pipenv run python main.py --help`
+```
+pipenv run python main.py --help
+```
 
 ### Example
 
-The utility has been tested on the [numpy/numpy](https://github.com/numpy/numpy) repository containing 9057 pull requests as follows:
+The utility has been tested on the [numpy/numpy](https://github.com/numpy/numpy) repository containing 9057 pull requests:
 ```
 $ pipenv run python main.py collect numpy/numpy
 ```
 
-_(note that the script above is very long-running - for numpy it takes around 3.5 hours due to API rate limiting cool-offs)_
+_(Note: that the script above is very long-running - for numpy it takes around 3.5 hours due to API rate limiting cool-offs. Sometimes a transient 500 server error can cause `list_files` queries to fail - if this occurs, the script can be manually resumed from its last pagination page:)_
+```
+$ pipenv run python main.py collect numpy/numpy --resume-page 17
+```
 
 This has resulted in the following number of entities:
 ```
+$ psql
+
+# select * from pull_requests limit 1;
+  id   | owner | repository | number |           title            | user_id | state  |     created_at      |     updated_at      |      closed_at      | merged_at
+-------+-------+------------+--------+----------------------------+---------+--------+---------------------+---------------------+---------------------+-----------
+ 18160 | numpy | numpy      |      6 | Fix dtype shape comparison |  399551 | closed | 2010-10-20 23:27:05 | 2010-10-20 23:27:05 | 2010-11-01 00:38:49 |
+
 # select count(*) from pull_requests;
  count
 -------
   9057
-```
 
-```
+# select * from pull_request_files limit 1;
+  pr_id  |          filename          |  status  | additions | deletions | changes
+---------+----------------------------+----------+-----------+-----------+---------
+ 7992714 | numpy/lib/function_base.py | modified |        38 |         4 |      42
+
 # select count(*) from pull_request_files;
  count
 -------
