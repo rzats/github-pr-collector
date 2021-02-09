@@ -38,6 +38,13 @@ Finally, run the Python script as follows:
 pipenv run python main.py --help
 ```
 
+### Testing
+
+Unit tests can be ran as follows:
+```
+pipenv run python -m unittest discover .
+```
+
 ### Example
 
 The utility has been tested on the [numpy/numpy](https://github.com/numpy/numpy) repository containing 9057 pull requests:
@@ -112,3 +119,9 @@ $ pipenv run python main.py analyze top_10_files
 [I 210209 21:34:24 main:120] ('numpy/ma/tests/test_core.py', 283)
 [I 210209 21:34:24 main:120] ('numpy/lib/npyio.py', 277)
 ```
+
+### Future improvements?
+
+- *Automatic failover* - restarting the script if it encounters an error, with exponential backoff in case multiple restarts are necessary.
+- *Advanced user interfaces* - Flask-based API, front-end etc.
+- *More unit tests* - Python's SQLAlchemy mock used does not support single-column SELECT (https://github.com/miki725/alchemy-mock/issues/21) and more advanced features, so it cannot be used to test ORM queries; further research into test libraries or an integration test setup might be necessary.

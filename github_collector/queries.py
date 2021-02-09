@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql import func, desc, extract
+
 from github_collector import models
 
 # Common function used in aggregates below.

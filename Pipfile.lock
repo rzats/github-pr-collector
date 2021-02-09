@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "9b8011f722a984d829202ae22e27b0b15cfe8c7fd79c296352d6dbd242d9a86a"
+            "sha256": "818c0f1da997606dae610b0bc00286678895921ebad786f35d27096e56b97c6e"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -16,6 +16,14 @@
         ]
     },
     "default": {
+        "alchemy-mock": {
+            "hashes": [
+                "sha256:7914c3f56aa7dd793d31a5ea3816972ff57de6e3c82651febfaab135e8f39d7a",
+                "sha256:e076b11cdef76638f4de70d50f0d8cb851d69c41346d984371f757c8fb4a0efa"
+            ],
+            "index": "pypi",
+            "version": "==0.4.3"
+        },
         "fastcore": {
             "hashes": [
                 "sha256:278645a0233eb9b227a812ffd7761cb2b37546ac92cb9a93b8ec84d815209d4f",
@@ -76,6 +84,14 @@
             ],
             "markers": "python_version >= '2.6' and python_version not in '3.0, 3.1, 3.2, 3.3'",
             "version": "==2.4.7"
+        },
+        "six": {
+            "hashes": [
+                "sha256:30639c035cdb23534cd4aa2dd52c3bf48f06e5f4a941509c8bafd8ce11080259",
+                "sha256:8b74bedcbbbaca38ff6d7491d76f2b06b3592611af620f8426e82dddb04a5ced"
+            ],
+            "markers": "python_version >= '2.7' and python_version not in '3.0, 3.1, 3.2, 3.3'",
+            "version": "==1.15.0"
         },
         "sqlalchemy": {
             "hashes": [

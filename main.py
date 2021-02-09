@@ -51,7 +51,7 @@ def main(args):
         action_collect(session, ghapi, owner, repository, args.resume_page)
     else:
         session = queries.init_db_session(connection_string)
-        action_analyze(session)
+        action_analyze(session, args.query)
 
 
 def action_collect(session, ghapi, owner, repository, resume_page=None):
@@ -112,16 +112,23 @@ def action_collect(session, ghapi, owner, repository, resume_page=None):
     exit(0)
 
 
-def action_analyze(session):
-    if args.query == TOP_10_FILES:
+def action_analyze(session, query_type):
+    """
+    Analyze collected PRs by running a specified query.
+
+    @param session: SQLAlchemy session.
+    @param query_type: Type of query to run against the database.
+    @return: The result of the query.
+    """
+    if query_type == TOP_10_FILES:
         query = queries.top_n_files(session, 10)
         result = queries.execute_query(session, query)
         for file in result:
             logger.info(file)
     else:
-        if args.query == MIN_T_MERGE:
+        if query_type == MIN_T_MERGE:
             query = queries.datediff_min(session)
-        elif args.query == AVG_T_MERGE:
+        elif query_type == AVG_T_MERGE:
             query = queries.datediff_avg(session)
         else: # max_t_merge
             query = queries.datediff_max(session)
