@@ -8,8 +8,6 @@ __version__ = "1.0.0"
 
 import argparse
 import os
-import sys
-import time
 
 from logzero import logger
 
@@ -19,7 +17,7 @@ from github_collector import api, queries, utils
 MIN_T_MERGE = "min_t_merge"
 AVG_T_MERGE = "avg_t_merge"
 MAX_T_MERGE = "max_t_merge"
-TOP_3_FILES = "top_3_files"
+TOP_10_FILES = "top_10_files"
 
 
 def main(args):
@@ -35,7 +33,7 @@ def main(args):
             assert len(args.repo.split("/")) == 2
         except AssertionError:
             logger.error(
-                "repo must be in the form of owner/repository e.g. numpy/numpy")
+                "repo must be in the form owner/repository e.g. numpy/numpy")
             exit(1)
 
         owner = args.repo.split("/")[0]
@@ -50,35 +48,43 @@ def main(args):
         ghapi = api.init_api(token)
 
         session = queries.init_db_session(connection_string)
-        action_collect(session, ghapi, owner, repository)
+        action_collect(session, ghapi, owner, repository, args.resume_page)
     else:
         session = queries.init_db_session(connection_string)
         action_analyze(session)
 
 
-def action_collect(session, ghapi, owner, repository):
+def action_collect(session, ghapi, owner, repository, resume_page=None):
     """
     Collects pull requests from GitHub repository and adds them to database.
 
-    @param session: SQLAlchemy session
-    @param ghapi: GhApi instance
-    @param owner: The account owning the GitHub repository
-    @param repository: The name of the GitHub repository
+    @param session: SQLAlchemy session.
+    @param ghapi: GhApi instance.
+    @param owner: The account owning the GitHub repository.
+    @param repository: The name of the GitHub repository.
+    @param resume_page: The page collection should be resumed from.
     """
     list_pulls = api.list_pulls(ghapi, owner, repository, ascending=True)
 
     try:
         logger.info(f"Collecting from {owner}/{repository}...")
         for count, page in enumerate(list_pulls):
+            # If resume_page is set, skip until that page
+            if resume_page is not None and count + 1 < resume_page:
+                continue
+
             # Add all pull requests to database
             logger.debug(f"GET list_pulls {owner}/{repository} | page #{count+1}")
             pulls = [pr for pr in page]
-            queries.add_pulls(session, pulls, owner, repository)
 
-            # Commit PRs before files, as files rely on pull request IDs
-            logger.info(f'Committing PRs for pull request page #{count+1}...')
-            session.commit()
-            logger.info('...committed successfully!')
+            # If resume_page is set, do not re-insert pulls from that page
+            if resume_page is None or count + 1 > resume_page:
+                queries.add_pulls(session, pulls, owner, repository)
+
+                # Commit PRs before files, as files rely on pull request IDs
+                logger.info(f'Committing PRs for page #{count+1}...')
+                session.commit()
+                logger.info('...committed successfully!')
 
             # For each pull request, add files to database
             for pull in pulls:
@@ -93,7 +99,7 @@ def action_collect(session, ghapi, owner, repository):
                 queries.add_files(session, pull, files)
 
             # Commit files after all are collected
-            logger.info(f'Committing files for pull request page #{count+1}...')
+            logger.info(f'Committing files for PR page #{count+1}...')
             session.commit()
             logger.info('...committed successfully!')
         logger.info(f"Finished successfully!")
@@ -107,10 +113,11 @@ def action_collect(session, ghapi, owner, repository):
 
 
 def action_analyze(session):
-    if args.query == TOP_3_FILES:
-        query = queries.top_n_files(session, 3)
+    if args.query == TOP_10_FILES:
+        query = queries.top_n_files(session, 10)
         result = queries.execute_query(session, query)
-        logger.info(result)
+        for file in result:
+            logger.info(file)
     else:
         if args.query == MIN_T_MERGE:
             query = queries.datediff_min(session)
@@ -132,6 +139,8 @@ if __name__ == "__main__":
                                     help='Collect PR data from GitHub API.')
     collect.add_argument("repo",
                          help="GitHUb repository to use, e.g. numpy/numpy")
+    collect.add_argument("--resume-page", type=int, default=None,
+                         help="The page to resume collection from.")
     collect.set_defaults(which='collect')
 
     # Add subparser for Postgres analytics
@@ -142,7 +151,7 @@ if __name__ == "__main__":
                              MIN_T_MERGE,
                              AVG_T_MERGE,
                              MAX_T_MERGE,
-                             TOP_3_FILES
+                             TOP_10_FILES
                          ],
                          help='The type of query to be run on the database.')
     analyze.set_defaults(which='analyze')
